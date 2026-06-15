@@ -36,6 +36,7 @@ from src.GUI.GUI_entry_preview import GuiEntryPreview
 from src.GUI.GUI_menu import GuiMenu
 from src.GUI.GUI_tab_controller import GuiTabController
 from src.GUI.GUI_treeview import GuiTreeView
+from src.GUI.GUI_validation_report import ValidationReportWindow
 
 # default app settings
 WINDOW_HEIGHT = 460
@@ -698,6 +699,9 @@ class EAManGui:
         # and add them to the list if found
         ea_img.parse_bin_attachments(in_file)
 
+        # run container validation
+        ea_img.validate_container()
+
         # convert all supported images
         # in the ea_img file
         try:
@@ -769,12 +773,41 @@ class EAManGui:
                 self.set_text_in_box(self.tab_controller.new_shape_entry_header_info_box.eh_text_entry_flag_swizzled, ea_img.dir_entry_list[0].new_shape_flag_swizzled)
                 self._execute_new_shape_tab_logic()
 
-        self.tree_view.tree_man.add_object(ea_img)
+        self.tree_view.tree_man.add_object(ea_img, ea_img.validation_report)
         in_file.close()
+
+        # auto-show validation report if critical anomalies detected
+        if ea_img.validation_report and ea_img.validation_report.overall_status in ("critical", "error"):
+            self.show_validation_report()
 
     def show_about_window(self):
         if not any(isinstance(x, tk.Toplevel) for x in self.master.winfo_children()):
             AboutWindow(self)
+
+    def show_validation_report(self):
+        """Show the validation report for the currently selected EA image."""
+        if not self.opened_ea_images:
+            messagebox.showwarning("Warning", "No file loaded. Open a file first.")
+            return
+
+        # Try to get the currently selected EA image from tree
+        selected = self.tree_view.treeview_widget.selection()
+        ea_img = None
+
+        if selected:
+            item_iid = selected[0]
+            item_id = item_iid.split("_")[0]
+            ea_img = self.tree_view.tree_man.get_object(item_id, self.opened_ea_images)
+
+        # Fall back to the most recently opened image
+        if ea_img is None:
+            ea_img = self.opened_ea_images[-1]
+
+        if ea_img.validation_report is None:
+            messagebox.showwarning("Warning", "No validation report available for this file.")
+            return
+
+        ValidationReportWindow(self, ea_img.validation_report)
 
     @staticmethod
     def set_text_in_box(in_box, in_text):

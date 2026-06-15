@@ -14,6 +14,12 @@ class GuiMenu(tk.Frame):
             accelerator="Ctrl+O",
         )
         parent.bind_all("<Control-o>", lambda x: gui_main.open_file())
+        self.filemenu.add_command(
+            label="Validation Report",
+            command=lambda: gui_main.show_validation_report(),
+            accelerator="Ctrl+R",
+        )
+        parent.bind_all("<Control-r>", lambda x: gui_main.show_validation_report())
         self.filemenu.add_separator()
         self.filemenu.add_command(label="Quit", command=lambda: gui_main.quit_program(), accelerator="Ctrl+Q")
         parent.bind_all("<Control-q>", lambda x: gui_main.quit_program())

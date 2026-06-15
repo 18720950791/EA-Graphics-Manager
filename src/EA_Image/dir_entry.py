@@ -143,6 +143,7 @@ class DirEntry:
         self.h_image_bpp = None
 
         self.bin_attachments_list = []
+        self.validation_anomalies: list = []
         self.if_next_entry_exist_flag = None
         self.is_img_convert_supported: bool = False
         self.img_convert_data: Optional[bytes] = None

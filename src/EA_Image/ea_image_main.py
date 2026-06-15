@@ -57,6 +57,7 @@ class EAImage:
         self.dir_entry_list = []
         self.ea_image_id = -1
         self.dir_entry_id = 0
+        self.validation_report = None
 
     def set_ea_image_id(self, in_ea_image_id):
         self.ea_image_id = in_ea_image_id
@@ -330,3 +331,11 @@ class EAImage:
             return False
 
         return True
+
+    def validate_container(self):
+        """Run container validation and store the report."""
+        from src.EA_Image.validation import ContainerValidator
+
+        validator = ContainerValidator()
+        self.validation_report = validator.validate(self)
+        return self.validation_report

@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/Users/ouyang/**)",
+      "Bash(echo \"HOME=$HOME\")",
+      "Bash(for d:*)",
+      "Bash(do echo:*)",
+      "Read(//d/alicode/ali/repo-29/qwen4/**)",
+      "Bash(done)",
+      "Bash(for f:*)",
+      "Bash(echo \"exit: $?\")",
+      "Bash(python:*)"
+    ]
+  }
+}
