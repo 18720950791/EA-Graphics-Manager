@@ -3,6 +3,7 @@ Copyright © 2023-2025  Bartłomiej Duda
 License: GPL-3.0 License
 """
 
+import copy
 import os
 import struct
 import traceback
@@ -329,4 +330,42 @@ class EAImage:
             logger.error("Decoded image data is empty!")
             return False
 
+        return True
+
+    def capture_baselines(self) -> bool:
+        """Snapshot raw_data and import flags for all entries and attachments.
+        Called after a file is fully parsed (open) or after a successful save."""
+        for ea_dir in self.dir_entry_list:
+            ea_dir.baseline_raw_data = copy.copy(ea_dir.raw_data)
+            ea_dir.baseline_import_flag = ea_dir.entry_import_flag
+            for bin_att in ea_dir.bin_attachments_list:
+                bin_att.baseline_raw_data = copy.copy(bin_att.raw_data)
+                bin_att.baseline_import_flag = bin_att.import_flag
+        return True
+
+    def has_unsaved_changes(self) -> bool:
+        """Return True if any entry or attachment has been modified since open/save."""
+        for ea_dir in self.dir_entry_list:
+            if ea_dir.entry_import_flag:
+                return True
+            for bin_att in ea_dir.bin_attachments_list:
+                if bin_att.import_flag:
+                    return True
+        return False
+
+    def revert_entry(self, ea_dir_entry) -> bool:
+        """Restore a single DirEntry (and its modified attachments) to baseline state."""
+        ea_dir_entry.raw_data = copy.copy(ea_dir_entry.baseline_raw_data)
+        ea_dir_entry.entry_import_flag = ea_dir_entry.baseline_import_flag
+        for bin_att in ea_dir_entry.bin_attachments_list:
+            if bin_att.import_flag:
+                bin_att.raw_data = copy.copy(bin_att.baseline_raw_data)
+                bin_att.import_flag = bin_att.baseline_import_flag
+        return True
+
+    def revert_all(self) -> bool:
+        """Restore all modified entries in this file to their baseline state."""
+        for ea_dir in self.dir_entry_list:
+            if ea_dir.entry_import_flag:
+                self.revert_entry(ea_dir)
         return True

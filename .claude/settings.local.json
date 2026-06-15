@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find . -type f \\\\\\(-name *.py -o -name *.cpp -o -name *.h -o -name *.hpp -o -name *.ui -o -name *.qml -o -name *.cs -o -name *.java -o -name *.ts -o -name *.js -o -name *.rs \\\\\\))",
+      "Bash(python -m py_compile src/EA_Image/dir_entry.py)",
+      "Bash(python -m py_compile src/EA_Image/attachments/bin_attachment_entry.py)",
+      "Bash(python -m py_compile src/EA_Image/ea_image_main.py)",
+      "Bash(python -m py_compile src/GUI/GUI_main.py)",
+      "Bash(python -c \"from src.EA_Image.dir_entry import DirEntry; d = DirEntry\\(''1'', ''test'', 0\\); print\\(f''baseline_raw_data={d.baseline_raw_data}, baseline_import_flag={d.baseline_import_flag}''\\)\")",
+      "Bash(python -c \"from src.EA_Image.attachments.bin_attachment_entry import BinAttachmentEntry; b = BinAttachmentEntry\\(''1'', 0\\); print\\(f''baseline_raw_data={b.baseline_raw_data}, baseline_import_flag={b.baseline_import_flag}''\\)\")",
+      "Bash(python -c \"from src.EA_Image.ea_image_main import EAImage; img = EAImage\\(\\); print\\(f''has_unsaved_changes={img.has_unsaved_changes\\(\\)}, capture={img.capture_baselines\\(\\)}, revert_all={img.revert_all\\(\\)}''\\)\")"
+    ]
+  }
+}

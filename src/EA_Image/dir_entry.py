@@ -147,6 +147,8 @@ class DirEntry:
         self.is_img_convert_supported: bool = False
         self.img_convert_data: Optional[bytes] = None
         self.entry_import_flag: bool = False
+        self.baseline_raw_data: Optional[bytes] = None
+        self.baseline_import_flag: bool = False
 
         # new shape fields
         self.new_shape_flags = None

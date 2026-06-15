@@ -123,6 +123,9 @@ class EAManGui:
             self.current_save_directory_path = ""
             self.current_open_directory_path = ""
 
+        # register window close handler for unsaved-changes prompt
+        master.protocol("WM_DELETE_WINDOW", self.on_window_close)
+
     ######################################################################################################
     #                                             methods                                                #
     ######################################################################################################
@@ -346,6 +349,9 @@ class EAManGui:
     def treeview_rightclick_popup(self, event, item_iid):
         # create right-click popup menu
         self.tree_rclick_popup = tk.Menu(self.master, tearoff=0)
+        item_id = item_iid.split("_")[0]
+        ea_img = self.tree_view.tree_man.get_object(item_id, self.opened_ea_images)
+
         if "direntry" not in item_iid and "binattach" not in item_iid:
             self.tree_rclick_popup.add_command(
                 label="Open in Explorer", command=lambda: self.treeview_rclick_open_in_explorer(item_iid)
@@ -354,6 +360,12 @@ class EAManGui:
             self.tree_rclick_popup.add_command(
                 label="Save File As...", command=lambda: self.treeview_rclick_save_file_as(item_iid)
             )
+            if ea_img.has_unsaved_changes():
+                self.tree_rclick_popup.add_separator()
+                self.tree_rclick_popup.add_command(
+                    label="Revert All Changes",
+                    command=lambda: self.treeview_rclick_revert_all(item_iid),
+                )
             self.tree_rclick_popup.tk_popup(event.x_root, event.y_root, entry="0")
         elif "direntry" in item_iid and "binattach" not in item_iid:
             self.tree_rclick_popup.add_command(
@@ -366,6 +378,13 @@ class EAManGui:
             self.tree_rclick_popup.add_command(
                 label="Import Image from DDS/PNG/BMP", command=lambda: self.treeview_rclick_import_image(item_iid)
             )
+            ea_dir = self.tree_view.tree_man.get_object_dir(ea_img, item_iid)
+            if ea_dir.entry_import_flag:
+                self.tree_rclick_popup.add_separator()
+                self.tree_rclick_popup.add_command(
+                    label="Revert to Original",
+                    command=lambda: self.treeview_rclick_revert_entry(item_iid),
+                )
             self.tree_rclick_popup.tk_popup(event.x_root, event.y_root, entry="0")
         elif "direntry" in item_iid and "binattach" in item_iid:
             self.tree_rclick_popup.add_command(
@@ -379,6 +398,11 @@ class EAManGui:
 
     def treeview_rclick_close(self, item_iid):
         ea_img = self.tree_view.tree_man.get_object(item_iid, self.opened_ea_images)
+
+        # check for unsaved changes before closing
+        if not self._confirm_discard_changes(ea_img):
+            return  # user cancelled
+
         self.tree_view.treeview_widget.delete(item_iid)  # removing item from treeview
 
         if ea_img.sign in OLD_SHAPE_ALLOWED_SIGNATURES:
@@ -394,6 +418,8 @@ class EAManGui:
             self.set_text_in_box(self.tab_controller.new_shape_file_header_info_box.fh_text_header_and_toc_size, "")
             self._execute_new_shape_tab_logic()
 
+        if ea_img in self.opened_ea_images:
+            self.opened_ea_images.remove(ea_img)
         del ea_img  # removing object from memory
 
     def treeview_rclick_save_file_as(self, item_iid):
@@ -451,6 +477,20 @@ class EAManGui:
         out_file.close()
         messagebox.showinfo("Info", "File saved successfully!")
         logger.info(f"EA Image has been exported successfully to {out_file.name}")
+
+        # update baseline to saved state and clear all dirty markers
+        ea_img.total_f_data = out_data
+        ea_img.capture_baselines()
+
+        for ea_dir in ea_img.dir_entry_list:
+            ea_dir.entry_import_flag = False
+            for bin_att in ea_dir.bin_attachments_list:
+                bin_att.import_flag = False
+            # clear visual markers in tree
+            self.tree_view.treeview_widget.tag_configure(ea_dir.id, font=("Segoe UI", 9))
+            self.tree_view.treeview_widget.tag_configure(ea_dir.id, image="")
+
+        self._update_file_dirty_state(ea_img)
         return True
 
     def treeview_rclick_open_in_explorer(self, item_iid):
@@ -585,6 +625,9 @@ class EAManGui:
         self.tree_view.treeview_widget.tag_configure(item_iid, font=("Segoe UI", 9, "bold"))
         self.tree_view.treeview_widget.tag_configure(item_iid, image=self.checkmark_image)
 
+        # update file-level dirty indicator
+        self._update_file_dirty_state(ea_img)
+
         logger.info("Image has been imported successfully")
         return True
 
@@ -636,8 +679,7 @@ class EAManGui:
         messagebox.showinfo("Info", "File saved successfully!")
 
     def quit_program(self):
-        logger.info("Quit GUI...")
-        self.master.destroy()
+        self.on_window_close()
 
     def open_file(self):
         try:
@@ -697,6 +739,9 @@ class EAManGui:
         # check if there are any bin attachments
         # and add them to the list if found
         ea_img.parse_bin_attachments(in_file)
+
+        # capture baseline snapshots for revert support
+        ea_img.capture_baselines()
 
         # convert all supported images
         # in the ea_img file
@@ -775,6 +820,117 @@ class EAManGui:
     def show_about_window(self):
         if not any(isinstance(x, tk.Toplevel) for x in self.master.winfo_children()):
             AboutWindow(self)
+
+    # ── Modification state management ────────────────────────────────────
+
+    def _update_file_dirty_state(self, ea_img):
+        """Update the file root node text in the tree to show/hide ' *' suffix."""
+        tree = self.tree_view.treeview_widget
+        current_text = tree.item(ea_img.ea_image_id, "text")
+        if ea_img.has_unsaved_changes():
+            if not current_text.endswith(" *"):
+                tree.item(ea_img.ea_image_id, text=current_text + " *")
+        else:
+            if current_text.endswith(" *"):
+                tree.item(ea_img.ea_image_id, text=current_text[:-2])
+
+    def _confirm_discard_changes(self, ea_img) -> bool:
+        """Prompt user about unsaved changes.
+        Returns True if OK to proceed (saved or discarded), False if cancelled."""
+        if not ea_img.has_unsaved_changes():
+            return True
+        result = messagebox.askyesnocancel(
+            "Unsaved Changes",
+            f'"{ea_img.f_name}" has unsaved changes.\n\nSave before closing?',
+        )
+        if result is None:  # Cancel
+            return False
+        if result:  # Yes -> Save
+            save_result = self.treeview_rclick_save_file_as(str(ea_img.ea_image_id))
+            return bool(save_result)
+        return True  # No -> Discard
+
+    def on_window_close(self):
+        """Handle window close / quit: prompt for each file with unsaved changes."""
+        for ea_img in list(self.opened_ea_images):
+            if not self._confirm_discard_changes(ea_img):
+                return  # user cancelled quit
+        logger.info("Quit GUI...")
+        self.master.destroy()
+
+    def treeview_rclick_revert_entry(self, item_iid):
+        """Revert a single DirEntry (and its palette) back to baseline."""
+        ea_img = self.tree_view.tree_man.get_object(item_iid.split("_")[0], self.opened_ea_images)
+        ea_dir = self.tree_view.tree_man.get_object_dir(ea_img, item_iid)
+        ea_img.revert_entry(ea_dir)
+
+        # re-decode and refresh preview
+        ea_img.convert_image_data_for_export_and_preview(ea_dir, ea_dir.h_record_id, self)
+        self.entry_preview.init_image_preview_logic(ea_dir, item_iid)
+
+        # remove tree visual marker (checkmark + bold)
+        self.tree_view.treeview_widget.tag_configure(item_iid, font=("Segoe UI", 9))
+        self.tree_view.treeview_widget.tag_configure(item_iid, image="")
+
+        # update file-level dirty indicator
+        self._update_file_dirty_state(ea_img)
+
+    def treeview_rclick_revert_all(self, item_iid):
+        """Revert all modified entries in a file back to baseline."""
+        ea_img = self.tree_view.tree_man.get_object(item_iid, self.opened_ea_images)
+
+        # collect modified entry iids before reverting
+        modified_iids = []
+        for ea_dir in ea_img.dir_entry_list:
+            if ea_dir.entry_import_flag:
+                modified_iids.append(ea_dir.id)
+
+        ea_img.revert_all()
+
+        # re-decode all images and refresh tree visuals
+        ea_img.convert_images(self)
+        for entry_id in modified_iids:
+            self.tree_view.treeview_widget.tag_configure(entry_id, font=("Segoe UI", 9))
+            self.tree_view.treeview_widget.tag_configure(entry_id, image="")
+
+        # refresh current selection preview
+        self._refresh_current_selection()
+        self._update_file_dirty_state(ea_img)
+
+    def _refresh_current_selection(self):
+        """Refresh info boxes and preview for the currently selected tree item."""
+        selection = self.tree_view.treeview_widget.selection()
+        if not selection:
+            return
+        item_iid = selection[0]
+        item_id = item_iid.split("_")[0]
+        ea_img = self.tree_view.tree_man.get_object(item_id, self.opened_ea_images)
+        if ea_img is None:
+            return
+
+        if "direntry" in item_iid and "binattach" not in item_iid:
+            ea_dir = self.tree_view.tree_man.get_object_dir(ea_img, item_iid)
+            if ea_dir and ea_dir.is_img_convert_supported:
+                try:
+                    self.entry_preview.preview_instance.destroy()
+                except Exception:
+                    pass
+                self.entry_preview.init_image_preview_logic(ea_dir, item_iid)
+        elif "binattach" in item_iid:
+            dir_iid = item_iid.split("_binattach")[0]
+            ea_dir = self.tree_view.tree_man.get_object_dir(ea_img, dir_iid)
+            bin_attach = self.tree_view.tree_man.get_object_bin_attach(ea_dir, item_iid)
+            if bin_attach:
+                try:
+                    self.entry_preview.preview_instance.destroy()
+                except Exception:
+                    pass
+                if bin_attach.h_record_id in PALETTE_TYPES:
+                    self.entry_preview.init_palette_preview_logic(bin_attach)
+                else:
+                    self.entry_preview.init_binary_preview_logic(bin_attach)
+
+    # ── End modification state management ────────────────────────────────
 
     @staticmethod
     def set_text_in_box(in_box, in_text):
