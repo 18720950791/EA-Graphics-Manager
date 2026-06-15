@@ -21,6 +21,7 @@ from reversebox.image.pillow_wrapper import PillowWrapper
 
 from src.EA_Image import ea_image_main
 from src.EA_Image.attachments.palette_entry import PaletteEntry
+from src.EA_Image.batch_export import BatchExportItem, run_batch_export, write_report_file
 from src.EA_Image.constants import (
     CONVERT_IMAGES_SUPPORTED_TYPES,
     IMPORT_IMAGES_SUPPORTED_TYPES,
@@ -32,6 +33,11 @@ from src.EA_Image.dto import EncodeInfoDTO
 from src.EA_Image.ea_image_encoder import encode_ea_image
 from src.EA_Image.ea_image_main import EAImage
 from src.GUI.about_window import AboutWindow
+from src.GUI.batch_export_dialog import (
+    BatchExportFormatDialog,
+    BatchExportProgressDialog,
+    BatchExportResultDialog,
+)
 from src.GUI.GUI_entry_preview import GuiEntryPreview
 from src.GUI.GUI_menu import GuiMenu
 from src.GUI.GUI_tab_controller import GuiTabController
@@ -340,7 +346,9 @@ class EAManGui:
                 pass
 
         if event.num == 3:
-            self.tree_view.treeview_widget.selection_set(item_iid)
+            current_selection = self.tree_view.treeview_widget.selection()
+            if item_iid not in current_selection:
+                self.tree_view.treeview_widget.selection_set(item_iid)
             self.treeview_rightclick_popup(event, item_iid)
 
     def treeview_rightclick_popup(self, event, item_iid):
@@ -354,6 +362,11 @@ class EAManGui:
             self.tree_rclick_popup.add_command(
                 label="Save File As...", command=lambda: self.treeview_rclick_save_file_as(item_iid)
             )
+            self.tree_rclick_popup.add_separator()
+            self.tree_rclick_popup.add_command(
+                label="Export All Images in Container...",
+                command=lambda: self.batch_export_all_images(item_iid),
+            )
             self.tree_rclick_popup.tk_popup(event.x_root, event.y_root, entry="0")
         elif "direntry" in item_iid and "binattach" not in item_iid:
             self.tree_rclick_popup.add_command(
@@ -365,6 +378,11 @@ class EAManGui:
             )
             self.tree_rclick_popup.add_command(
                 label="Import Image from DDS/PNG/BMP", command=lambda: self.treeview_rclick_import_image(item_iid)
+            )
+            self.tree_rclick_popup.add_separator()
+            self.tree_rclick_popup.add_command(
+                label="Export Selected Images (Batch)...",
+                command=lambda: self.batch_export_selected_images(),
             )
             self.tree_rclick_popup.tk_popup(event.x_root, event.y_root, entry="0")
         elif "direntry" in item_iid and "binattach" in item_iid:
@@ -786,5 +804,86 @@ class EAManGui:
     @staticmethod
     def close_toplevel_window(wind):
         wind.destroy()
+
+    ######################################################################################################
+    #                                          batch export                                              #
+    ######################################################################################################
+
+    def _persist_save_directory(self, directory: str) -> None:
+        self.current_save_directory_path = directory
+        try:
+            self.user_config.set("config", "save_directory_path", directory)
+            with open(self.user_config_file_path, "w") as configfile:
+                self.user_config.write(configfile)
+        except Exception as error:
+            logger.error(f"Could not save output directory to config: {error}")
+
+    def _build_export_item(self, ea_img: EAImage, ea_dir, entry_index: int) -> BatchExportItem:
+        return BatchExportItem(
+            container_name=ea_img.f_name or "container",
+            entry_index=entry_index,
+            entry_tag=getattr(ea_dir, "tag", "") or "",
+            ea_dir=ea_dir,
+        )
+
+    def _build_items_for_container(self, ea_img: EAImage) -> list:
+        return [self._build_export_item(ea_img, ea_dir, index) for index, ea_dir in enumerate(ea_img.dir_entry_list, start=1)]
+
+    def _collect_selected_image_items(self) -> list:
+        items = []
+        for item_iid in self.tree_view.treeview_widget.selection():
+            if "direntry" in item_iid and "binattach" not in item_iid:
+                ea_img = self.tree_view.tree_man.get_object(item_iid.split("_")[0], self.opened_ea_images)
+                if ea_img is None:
+                    continue
+                ea_dir = self.tree_view.tree_man.get_object_dir(ea_img, item_iid)
+                if ea_dir is None:
+                    continue
+                entry_index = ea_img.dir_entry_list.index(ea_dir) + 1
+                items.append(self._build_export_item(ea_img, ea_dir, entry_index))
+        return items
+
+    def batch_export_all_images(self, container_iid) -> None:
+        ea_img = self.tree_view.tree_man.get_object(container_iid, self.opened_ea_images)
+        if ea_img is None:
+            messagebox.showwarning("Batch Export", "Could not find the selected container.")
+            return
+        self._run_batch_export(self._build_items_for_container(ea_img))
+
+    def batch_export_selected_images(self) -> None:
+        self._run_batch_export(self._collect_selected_image_items())
+
+    def _run_batch_export(self, items: list) -> None:
+        if not items:
+            messagebox.showinfo("Batch Export", "No image entries are selected for export.")
+            return
+
+        format_dialog = BatchExportFormatDialog(self.master)
+        export_format = format_dialog.result
+        if export_format is None:
+            return  # user cancelled the format dialog
+
+        out_dir = filedialog.askdirectory(
+            initialdir=self.current_save_directory_path, title="Select output folder for batch export"
+        )
+        if not out_dir:
+            return  # user cancelled the directory dialog
+        self._persist_save_directory(out_dir)
+
+        progress_dialog = BatchExportProgressDialog(self.master, total=len(items))
+        try:
+            result = run_batch_export(
+                items,
+                out_dir,
+                export_format,
+                progress_callback=progress_dialog.update_progress,
+                cancel_check=progress_dialog.is_cancelled,
+            )
+        finally:
+            progress_dialog.close()
+
+        report_path = write_report_file(result, out_dir)
+        logger.info(f"Batch export finished: {result.summary_text()}")
+        BatchExportResultDialog(self.master, result, report_path)
 
 # fmt: on

@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c \"import reversebox, PIL, numpy; from reversebox.image.pillow_wrapper import PillowWrapper; import inspect; print\\(''''reversebox OK''''\\); print\\(inspect.signature\\(PillowWrapper.get_pil_image_file_data_for_export\\)\\)\")",
+      "Bash(python -m pytest src/tests/test_batch_export.py -q)",
+      "Bash(python -c \"import src.GUI.GUI_main; import src.GUI.batch_export_dialog; import src.EA_Image.batch_export; print\\(''''IMPORTS OK''''\\)\")",
+      "Bash(python -m flake8 src/EA_Image/batch_export.py src/GUI/batch_export_dialog.py src/GUI/GUI_main.py src/GUI/GUI_treeview.py src/tests/test_batch_export.py)",
+      "Bash(echo \"flake8 exit: $PIPESTATUS[0]\")",
+      "Bash(python -m pytest src/tests/ -q)",
+      "Bash(python -m pip install --quiet flake8==7.1.1 black==24.10.0 \"isort==5.13.2\")",
+      "Bash(echo \"install exit: $PIPESTATUS[0]\")",
+      "Bash(python -c \"import src.GUI.GUI_main, src.GUI.batch_export_dialog, src.EA_Image.batch_export; print\\(''''IMPORTS OK''''\\)\")"
+    ]
+  }
+}
