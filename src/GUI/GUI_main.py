@@ -32,6 +32,7 @@ from src.EA_Image.dto import EncodeInfoDTO
 from src.EA_Image.ea_image_encoder import encode_ea_image
 from src.EA_Image.ea_image_main import EAImage
 from src.GUI.about_window import AboutWindow
+from src.GUI.batch_export_dialog import BatchExportDialog
 from src.GUI.GUI_entry_preview import GuiEntryPreview
 from src.GUI.GUI_menu import GuiMenu
 from src.GUI.GUI_tab_controller import GuiTabController
@@ -354,6 +355,15 @@ class EAManGui:
             self.tree_rclick_popup.add_command(
                 label="Save File As...", command=lambda: self.treeview_rclick_save_file_as(item_iid)
             )
+            self.tree_rclick_popup.add_separator()
+            self.tree_rclick_popup.add_command(
+                label="Batch Export All as Images...",
+                command=lambda: self.treeview_rclick_batch_export_images(item_iid),
+            )
+            self.tree_rclick_popup.add_command(
+                label="Batch Export All as Raw Data...",
+                command=lambda: self.treeview_rclick_batch_export_raw(item_iid),
+            )
             self.tree_rclick_popup.tk_popup(event.x_root, event.y_root, entry="0")
         elif "direntry" in item_iid and "binattach" not in item_iid:
             self.tree_rclick_popup.add_command(
@@ -365,6 +375,11 @@ class EAManGui:
             )
             self.tree_rclick_popup.add_command(
                 label="Import Image from DDS/PNG/BMP", command=lambda: self.treeview_rclick_import_image(item_iid)
+            )
+            self.tree_rclick_popup.add_separator()
+            self.tree_rclick_popup.add_command(
+                label="Batch Export All Images in File...",
+                command=lambda: self.treeview_rclick_batch_export_images(item_iid.split("_")[0]),
             )
             self.tree_rclick_popup.tk_popup(event.x_root, event.y_root, entry="0")
         elif "direntry" in item_iid and "binattach" in item_iid:
@@ -634,6 +649,26 @@ class EAManGui:
         out_file.write(out_data)
         out_file.close()
         messagebox.showinfo("Info", "File saved successfully!")
+
+    def treeview_rclick_batch_export_images(self, item_iid: str) -> None:
+        """Open batch export dialog in 'images' mode for the given EA image file."""
+        ea_img_id = item_iid.split("_")[0]
+        ea_img = self.tree_view.tree_man.get_object(ea_img_id, self.opened_ea_images)
+        if ea_img is None:
+            messagebox.showwarning("Warning", "Could not find the EA image object.")
+            return
+        if not any(isinstance(x, BatchExportDialog) for x in self.master.winfo_children()):
+            BatchExportDialog(self, ea_img, export_mode="images")
+
+    def treeview_rclick_batch_export_raw(self, item_iid: str) -> None:
+        """Open batch export dialog in 'raw' mode for the given EA image file."""
+        ea_img_id = item_iid.split("_")[0]
+        ea_img = self.tree_view.tree_man.get_object(ea_img_id, self.opened_ea_images)
+        if ea_img is None:
+            messagebox.showwarning("Warning", "Could not find the EA image object.")
+            return
+        if not any(isinstance(x, BatchExportDialog) for x in self.master.winfo_children()):
+            BatchExportDialog(self, ea_img, export_mode="raw")
 
     def quit_program(self):
         logger.info("Quit GUI...")

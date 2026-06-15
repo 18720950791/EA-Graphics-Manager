@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/Users/ouyang/.claude/plans/**)",
+      "Bash(mkdir -p \"C:/Users/ouyang/.claude/plans/\")",
+      "Bash(python3:*)",
+      "Bash(echo $SHELL)",
+      "Bash(python:*)"
+    ]
+  }
+}
