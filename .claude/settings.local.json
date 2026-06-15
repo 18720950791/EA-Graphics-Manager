@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m py_compile src/GUI/tree_filter.py src/GUI/GUI_treeview.py src/GUI/GUI_main.py)",
+      "Bash(python -m flake8 src/GUI/tree_filter.py src/GUI/GUI_treeview.py src/GUI/GUI_main.py)",
+      "Bash(python _tf_test.py)",
+      "Bash(cd:*)"
+    ]
+  }
+}

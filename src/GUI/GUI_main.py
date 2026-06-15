@@ -379,6 +379,7 @@ class EAManGui:
 
     def treeview_rclick_close(self, item_iid):
         ea_img = self.tree_view.tree_man.get_object(item_iid, self.opened_ea_images)
+        self.tree_view.reset_filter()  # restore full tree so the filter snapshot can't reference a removed node
         self.tree_view.treeview_widget.delete(item_iid)  # removing item from treeview
 
         if ea_img.sign in OLD_SHAPE_ALLOWED_SIGNATURES:
@@ -769,7 +770,9 @@ class EAManGui:
                 self.set_text_in_box(self.tab_controller.new_shape_entry_header_info_box.eh_text_entry_flag_swizzled, ea_img.dir_entry_list[0].new_shape_flag_swizzled)
                 self._execute_new_shape_tab_logic()
 
+        self.tree_view.reset_filter()  # restore full tree before adding a new container
         self.tree_view.tree_man.add_object(ea_img)
+        self.tree_view.refresh_filter_options()  # include the new container's entry types
         in_file.close()
 
     def show_about_window(self):
