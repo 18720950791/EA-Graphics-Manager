@@ -378,6 +378,11 @@ class EAManGui:
             logger.warning("Warning! Unsupported entry in right-click popup!")
 
     def treeview_rclick_close(self, item_iid):
+        # Clear any active filter before closing file
+        # (detached items cannot be deleted cleanly)
+        if self.tree_view.tree_filter._is_filtered:
+            self.tree_view.clear_filter()
+
         ea_img = self.tree_view.tree_man.get_object(item_iid, self.opened_ea_images)
         self.tree_view.treeview_widget.delete(item_iid)  # removing item from treeview
 
@@ -771,6 +776,10 @@ class EAManGui:
 
         self.tree_view.tree_man.add_object(ea_img)
         in_file.close()
+
+        # If filter is active, clear it so the new file is visible
+        if self.tree_view.tree_filter._is_filtered:
+            self.tree_view.clear_filter()
 
     def show_about_window(self):
         if not any(isinstance(x, tk.Toplevel) for x in self.master.winfo_children()):
