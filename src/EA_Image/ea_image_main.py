@@ -330,3 +330,54 @@ class EAImage:
             return False
 
         return True
+
+    def capture_modification_baseline(self) -> None:
+        """Snapshot the as-opened raw data for every entry and attachment.
+
+        Used as the revert baseline. Called after a file is opened and re-captured
+        after a successful save. ``raw_data`` is rebound (not mutated) on import, so
+        holding a reference to the current bytes is a safe immutable snapshot.
+        """
+        for ea_dir_entry in self.dir_entry_list:
+            ea_dir_entry.original_raw_data = ea_dir_entry.raw_data
+            for bin_attach in ea_dir_entry.bin_attachments_list:
+                bin_attach.original_raw_data = bin_attach.raw_data
+
+    def is_modified(self) -> bool:
+        return any(ea_dir_entry.is_modified() for ea_dir_entry in self.dir_entry_list)
+
+    def revert_dir_entry(self, ea_dir_entry: DirEntry, gui_main) -> bool:
+        """Restore a single entry (and its attachments) to the baseline content."""
+        if not ea_dir_entry.is_modified():
+            return False
+
+        ea_dir_entry.raw_data = ea_dir_entry.original_raw_data
+        ea_dir_entry.entry_import_flag = False
+
+        for bin_attach in ea_dir_entry.bin_attachments_list:
+            if bin_attach.import_flag:
+                bin_attach.raw_data = bin_attach.original_raw_data
+                bin_attach.import_flag = False
+
+        # recompute decoded preview data from the restored raw data (and restored palette)
+        if ea_dir_entry.is_img_convert_supported:
+            self.convert_image_data_for_export_and_preview(ea_dir_entry, ea_dir_entry.h_record_id, gui_main)
+
+        return True
+
+    def revert_all(self, gui_main) -> bool:
+        reverted_any = False
+        for ea_dir_entry in self.dir_entry_list:
+            if self.revert_dir_entry(ea_dir_entry, gui_main):
+                reverted_any = True
+        return reverted_any
+
+    def commit_saved_state(self, saved_bytes: bytes) -> None:
+        """Make the current in-memory content the new clean baseline after a save."""
+        self.total_f_data = saved_bytes
+        for ea_dir_entry in self.dir_entry_list:
+            ea_dir_entry.original_raw_data = ea_dir_entry.raw_data
+            ea_dir_entry.entry_import_flag = False
+            for bin_attach in ea_dir_entry.bin_attachments_list:
+                bin_attach.original_raw_data = bin_attach.raw_data
+                bin_attach.import_flag = False

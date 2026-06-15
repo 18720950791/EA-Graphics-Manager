@@ -33,6 +33,7 @@ class BinAttachmentEntry(DirEntry):
         self.raw_header = None
         self.raw_data_offset = None
         self.raw_data = None
+        self.original_raw_data = None  # baseline snapshot captured at file open / after save
         self.import_flag: bool = False
 
         self.h_record_id = None

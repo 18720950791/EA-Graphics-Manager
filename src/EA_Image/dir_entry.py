@@ -121,6 +121,7 @@ class DirEntry:
         self.raw_data_offset = None
         self.raw_data_size = None
         self.raw_data = None
+        self.original_raw_data = None  # baseline snapshot captured at file open / after save
 
         self.h_record_id = None
         self.h_record_id_masked = None
@@ -254,3 +255,7 @@ class DirEntry:
             str(self.h_record_id) + " | " + "0x%02X" % int(self.h_record_id) + " | UNKNOWN_TYPE",
         )
         return result
+
+    def is_modified(self) -> bool:
+        return self.entry_import_flag or any(bin_attach.import_flag for bin_attach in self.bin_attachments_list)
+

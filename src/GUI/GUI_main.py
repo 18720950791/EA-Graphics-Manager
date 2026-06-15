@@ -13,7 +13,6 @@ from pathlib import Path
 from tkinter import filedialog, messagebox
 from typing import Optional
 
-from PIL import Image, ImageTk
 from reversebox.common.common import get_file_extension, get_file_extension_uppercase
 from reversebox.common.logger import get_logger
 from reversebox.compression.compression_refpack import RefpackHandler
@@ -61,11 +60,10 @@ class EAManGui:
         master.minsize(MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT)
         master.maxsize(MAX_WINDOW_WIDTH, MAX_WINDOW_HEIGHT)
         master.resizable(width=0, height=0)
+        master.protocol("WM_DELETE_WINDOW", self.quit_program)  # guard window close (X) with unsaved-changes check
         self.current_dir = os.path.dirname(os.path.abspath(__file__))
         self.tree_rclick_popup = None
         self.icon_path = os.path.join(self.MAIN_DIRECTORY, "data", "img", "ea_icon.ico")
-        self.checkmark_path = os.path.join(self.MAIN_DIRECTORY, "data", "img", "checkmark.png")
-        self.checkmark_image = None
         self.current_mipmaps_resampling = tk.StringVar(value="nearest")
 
         try:
@@ -347,6 +345,7 @@ class EAManGui:
         # create right-click popup menu
         self.tree_rclick_popup = tk.Menu(self.master, tearoff=0)
         if "direntry" not in item_iid and "binattach" not in item_iid:
+            ea_img = self.tree_view.tree_man.get_object(item_iid, self.opened_ea_images)
             self.tree_rclick_popup.add_command(
                 label="Open in Explorer", command=lambda: self.treeview_rclick_open_in_explorer(item_iid)
             )
@@ -354,6 +353,10 @@ class EAManGui:
             self.tree_rclick_popup.add_command(
                 label="Save File As...", command=lambda: self.treeview_rclick_save_file_as(item_iid)
             )
+            if ea_img is not None and ea_img.is_modified():
+                self.tree_rclick_popup.add_command(
+                    label="Revert All Changes", command=lambda: self.treeview_rclick_revert_all(item_iid)
+                )
             self.tree_rclick_popup.tk_popup(event.x_root, event.y_root, entry="0")
         elif "direntry" in item_iid and "binattach" not in item_iid:
             self.tree_rclick_popup.add_command(
@@ -366,6 +369,12 @@ class EAManGui:
             self.tree_rclick_popup.add_command(
                 label="Import Image from DDS/PNG/BMP", command=lambda: self.treeview_rclick_import_image(item_iid)
             )
+            ea_img = self.tree_view.tree_man.get_object(item_iid.split("_")[0], self.opened_ea_images)
+            ea_dir = self.tree_view.tree_man.get_object_dir(ea_img, item_iid) if ea_img is not None else None
+            if ea_dir is not None and ea_dir.is_modified():
+                self.tree_rclick_popup.add_command(
+                    label="Revert to Original", command=lambda: self.treeview_rclick_revert_entry(item_iid)
+                )
             self.tree_rclick_popup.tk_popup(event.x_root, event.y_root, entry="0")
         elif "direntry" in item_iid and "binattach" in item_iid:
             self.tree_rclick_popup.add_command(
@@ -379,6 +388,14 @@ class EAManGui:
 
     def treeview_rclick_close(self, item_iid):
         ea_img = self.tree_view.tree_man.get_object(item_iid, self.opened_ea_images)
+
+        if ea_img is not None and ea_img.is_modified():
+            choice = self._prompt_unsaved_changes(ea_img.f_name)
+            if choice == "cancel":
+                return  # abort close, keep file open
+            if choice == "save" and not self._save_ea_image(ea_img):
+                return  # save dialog cancelled -> abort close
+
         self.tree_view.treeview_widget.delete(item_iid)  # removing item from treeview
 
         if ea_img.sign in OLD_SHAPE_ALLOWED_SIGNATURES:
@@ -394,10 +411,17 @@ class EAManGui:
             self.set_text_in_box(self.tab_controller.new_shape_file_header_info_box.fh_text_header_and_toc_size, "")
             self._execute_new_shape_tab_logic()
 
+        if ea_img in self.opened_ea_images:
+            self.opened_ea_images.remove(ea_img)  # drop from open list so it is not re-prompted at quit
+            self.opened_ea_images_count -= 1
         del ea_img  # removing object from memory
 
     def treeview_rclick_save_file_as(self, item_iid):
         ea_img: EAImage = self.tree_view.tree_man.get_object(item_iid, self.opened_ea_images)
+        if ea_img is not None:
+            self._save_ea_image(ea_img)
+
+    def _save_ea_image(self, ea_img: EAImage) -> bool:
         ea_img_memory_file = io.BytesIO(ea_img.total_f_data)
 
         # replace image with import data
@@ -449,6 +473,8 @@ class EAManGui:
 
         out_file.write(out_data)
         out_file.close()
+        ea_img.commit_saved_state(out_data)  # current in-memory content becomes the new clean baseline
+        self._refresh_modified_markers(ea_img)  # clear "* " markers after a successful save
         messagebox.showinfo("Info", "File saved successfully!")
         logger.info(f"EA Image has been exported successfully to {out_file.name}")
         return True
@@ -579,11 +605,8 @@ class EAManGui:
         ea_img.convert_image_data_for_export_and_preview(ea_dir, ea_dir.h_record_id, self)
         self.entry_preview.init_image_preview_logic(ea_dir, item_iid)  # refresh preview for imported image
 
-        # update tree view entry
-        checkmark_image = Image.open(self.checkmark_path).resize((15, 15))
-        self.checkmark_image = ImageTk.PhotoImage(checkmark_image)
-        self.tree_view.treeview_widget.tag_configure(item_iid, font=("Segoe UI", 9, "bold"))
-        self.tree_view.treeview_widget.tag_configure(item_iid, image=self.checkmark_image)
+        # update tree view markers (file node + this entry + its attachments)
+        self._refresh_modified_markers(ea_img)
 
         logger.info("Image has been imported successfully")
         return True
@@ -635,7 +658,131 @@ class EAManGui:
         out_file.close()
         messagebox.showinfo("Info", "File saved successfully!")
 
+    def _set_item_modified(self, item_iid, base_text, modified):
+        """Apply or clear the unsaved-change marker ('* ' prefix + bold) on a single tree row.
+
+        Each tree row carries its own iid as its first tag, so ``tag_configure(iid, ...)``
+        styles exactly that row.
+        """
+        try:
+            if modified:
+                self.tree_view.treeview_widget.item(item_iid, text="* " + base_text)
+                self.tree_view.treeview_widget.tag_configure(item_iid, font=("Segoe UI", 9, "bold"))
+            else:
+                self.tree_view.treeview_widget.item(item_iid, text=base_text)
+                self.tree_view.treeview_widget.tag_configure(item_iid, font=("Segoe UI", 9, "normal"))
+        except tk.TclError:
+            pass  # row may not be present in the tree
+
+    def _refresh_modified_markers(self, ea_img):
+        """Sync the '* '/bold markers for the file node and all its entries/attachments."""
+        for ea_dir in ea_img.dir_entry_list:
+            self._set_item_modified(ea_dir.id, ea_dir.tag, ea_dir.entry_import_flag)
+            for bin_attach in ea_dir.bin_attachments_list:
+                self._set_item_modified(bin_attach.id, bin_attach.tag, bin_attach.import_flag)
+        self._set_item_modified(str(ea_img.ea_image_id), ea_img.f_name, ea_img.is_modified())
+
+    def treeview_rclick_revert_entry(self, item_iid):
+        ea_img = self.tree_view.tree_man.get_object(item_iid.split("_")[0], self.opened_ea_images)
+        if ea_img is None:
+            return
+        ea_dir = self.tree_view.tree_man.get_object_dir(ea_img, item_iid)
+        if ea_dir is None or not ea_dir.is_modified():
+            return
+        if not messagebox.askyesno("Revert", "Revert this entry to the originally opened content?"):
+            return
+
+        ea_img.revert_dir_entry(ea_dir, self)
+
+        # refresh preview for the reverted entry
+        try:
+            self.entry_preview.preview_instance.destroy()
+        except Exception:
+            pass
+        if ea_dir.is_img_convert_supported:
+            self.entry_preview.init_image_preview_logic(ea_dir, item_iid)
+
+        self._refresh_modified_markers(ea_img)
+
+    def treeview_rclick_revert_all(self, item_iid):
+        ea_img = self.tree_view.tree_man.get_object(item_iid, self.opened_ea_images)
+        if ea_img is None or not ea_img.is_modified():
+            return
+        if not messagebox.askyesno("Revert All", "Revert ALL changes in this file to the originally opened content?"):
+            return
+
+        ea_img.revert_all(self)
+
+        # refresh preview for the currently selected entry, if it belongs to this file
+        selected = self.tree_view.treeview_widget.selection()
+        if selected:
+            sel_iid = selected[0]
+            if "direntry" in sel_iid and "binattach" not in sel_iid:
+                ea_dir = self.tree_view.tree_man.get_object_dir(ea_img, sel_iid)
+                if ea_dir is not None:
+                    try:
+                        self.entry_preview.preview_instance.destroy()
+                    except Exception:
+                        pass
+                    if ea_dir.is_img_convert_supported:
+                        self.entry_preview.init_image_preview_logic(ea_dir, sel_iid)
+
+        self._refresh_modified_markers(ea_img)
+
+    def _prompt_unsaved_changes(self, file_name) -> str:
+        """Modal Save / Discard / Cancel dialog. Returns 'save', 'discard' or 'cancel'."""
+        result = {"choice": "cancel"}
+
+        dialog = tk.Toplevel(self.master)
+        dialog.title("Unsaved Changes")
+        dialog.transient(self.master)
+        dialog.resizable(width=0, height=0)
+        try:
+            dialog.iconbitmap(self.icon_path)
+        except tk.TclError:
+            pass
+
+        tk.Label(
+            dialog,
+            text=f'File "{file_name}" has unsaved changes.\nDo you want to save them?',
+            justify="left",
+            padx=20,
+            pady=15,
+        ).pack()
+
+        button_frame = tk.Frame(dialog)
+        button_frame.pack(padx=20, pady=(0, 15))
+
+        def _choose(value):
+            result["choice"] = value
+            dialog.destroy()
+
+        tk.Button(button_frame, text="Save", width=10, command=lambda: _choose("save")).pack(side="left", padx=5)
+        tk.Button(button_frame, text="Discard", width=10, command=lambda: _choose("discard")).pack(side="left", padx=5)
+        tk.Button(button_frame, text="Cancel", width=10, command=lambda: _choose("cancel")).pack(side="left", padx=5)
+
+        dialog.protocol("WM_DELETE_WINDOW", lambda: _choose("cancel"))  # X button == Cancel
+
+        # center over the main window
+        dialog.update_idletasks()
+        x = self.master.winfo_rootx() + (self.master.winfo_width() // 2) - (dialog.winfo_width() // 2)
+        y = self.master.winfo_rooty() + (self.master.winfo_height() // 2) - (dialog.winfo_height() // 2)
+        dialog.geometry(f"+{x}+{y}")
+
+        dialog.grab_set()
+        self.master.wait_window(dialog)
+        return result["choice"]
+
     def quit_program(self):
+        for ea_img in list(self.opened_ea_images):
+            if not ea_img.is_modified():
+                continue
+            choice = self._prompt_unsaved_changes(ea_img.f_name)
+            if choice == "cancel":
+                return  # abort quit
+            if choice == "save" and not self._save_ea_image(ea_img):
+                return  # save dialog cancelled -> abort quit
+            # "discard" -> fall through, leaving this file unsaved
         logger.info("Quit GUI...")
         self.master.destroy()
 
@@ -770,6 +917,7 @@ class EAManGui:
                 self._execute_new_shape_tab_logic()
 
         self.tree_view.tree_man.add_object(ea_img)
+        ea_img.capture_modification_baseline()  # snapshot as-opened content as the revert baseline
         in_file.close()
 
     def show_about_window(self):
