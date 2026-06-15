@@ -281,14 +281,25 @@ class EAImage:
                 )
                 continue
 
-            logger.info(
-                f'Starting conversion for image {str(i+1)}, img_type={str(entry_type)}, img_tag="{ea_dir_entry.tag}"...'
-            )
-            ea_dir_entry.is_img_convert_supported = True
-            self.convert_image_data_for_export_and_preview(ea_dir_entry, entry_type, gui_main)
-            logger.info(
-                f'Finished conversion for image {str(i + 1)}, img_type={str(entry_type)}, img_tag="{ea_dir_entry.tag}"...'
-            )
+            try:
+                logger.info(
+                    f'Starting conversion for image {str(i+1)}, img_type={str(entry_type)}, img_tag="{ea_dir_entry.tag}"...'
+                )
+                ea_dir_entry.is_img_convert_supported = True
+                self.convert_image_data_for_export_and_preview(ea_dir_entry, entry_type, gui_main)
+                logger.info(
+                    f'Finished conversion for image {str(i + 1)}, img_type={str(entry_type)}, img_tag="{ea_dir_entry.tag}"...'
+                )
+            except Exception as error:
+                # recoverable error: mark this entry and keep loading the other resources
+                ea_dir_entry.is_img_convert_supported = False
+                ea_dir_entry.conversion_error = str(error)
+                logger.error(
+                    f'Recoverable error while converting image "{ea_dir_entry.tag}". '
+                    f"Skipping this entry and continuing. Error: {error}"
+                )
+                logger.error(traceback.format_exc())
+                continue
         return True
 
     def convert_image_data_for_export_and_preview(self, ea_dir_entry: DirEntry, entry_type: int, gui_main) -> bool:

@@ -28,6 +28,7 @@ from src.EA_Image.constants import (
     OLD_SHAPE_ALLOWED_SIGNATURES,
     PALETTE_TYPES,
 )
+from src.EA_Image.container_validation import validate_ea_image
 from src.EA_Image.dto import EncodeInfoDTO
 from src.EA_Image.ea_image_encoder import encode_ea_image
 from src.EA_Image.ea_image_main import EAImage
@@ -36,6 +37,7 @@ from src.GUI.GUI_entry_preview import GuiEntryPreview
 from src.GUI.GUI_menu import GuiMenu
 from src.GUI.GUI_tab_controller import GuiTabController
 from src.GUI.GUI_treeview import GuiTreeView
+from src.GUI.validation_report_window import ValidationReportWindow
 
 # default app settings
 WINDOW_HEIGHT = 460
@@ -349,6 +351,12 @@ class EAManGui:
         if "direntry" not in item_iid and "binattach" not in item_iid:
             self.tree_rclick_popup.add_command(
                 label="Open in Explorer", command=lambda: self.treeview_rclick_open_in_explorer(item_iid)
+            )
+            self.tree_rclick_popup.add_command(
+                label="Validation Report...",
+                command=lambda: self.show_validation_report_window(
+                    self.tree_view.tree_man.get_object(item_iid, self.opened_ea_images)
+                ),
             )
             self.tree_rclick_popup.add_command(label="Close File", command=lambda: self.treeview_rclick_close(item_iid))
             self.tree_rclick_popup.add_command(
@@ -769,12 +777,60 @@ class EAManGui:
                 self.set_text_in_box(self.tab_controller.new_shape_entry_header_info_box.eh_text_entry_flag_swizzled, ea_img.dir_entry_list[0].new_shape_flag_swizzled)
                 self._execute_new_shape_tab_logic()
 
+        # build the container validation report (marks entries; never aborts loading)
+        try:
+            ea_img.validation_report = validate_ea_image(ea_img)
+        except Exception as error:
+            logger.error(f"Error while building validation report! Error: {error}")
+            logger.error(traceback.format_exc())
+            ea_img.validation_report = None
+
         self.tree_view.tree_man.add_object(ea_img)
         in_file.close()
+
+        # show the standalone validation report window after parsing completes
+        if getattr(ea_img, "validation_report", None) is not None:
+            try:
+                self.show_validation_report_window(ea_img)
+            except Exception as error:
+                logger.error(f"Error while opening validation report window! Error: {error}")
 
     def show_about_window(self):
         if not any(isinstance(x, tk.Toplevel) for x in self.master.winfo_children()):
             AboutWindow(self)
+
+    def _get_selected_or_last_ea_image(self) -> Optional[EAImage]:
+        try:
+            selection = self.tree_view.treeview_widget.selection()
+            if selection:
+                file_id = selection[0].split("_")[0]
+                ea_img = self.tree_view.tree_man.get_object(file_id, self.opened_ea_images)
+                if ea_img is not None:
+                    return ea_img
+        except Exception as error:
+            logger.error(f"Could not resolve selected EA image: {error}")
+        if self.opened_ea_images:
+            return self.opened_ea_images[-1]
+        return None
+
+    def show_validation_report_window(self, ea_image: Optional[EAImage] = None):
+        if ea_image is None:
+            ea_image = self._get_selected_or_last_ea_image()
+        if ea_image is None:
+            messagebox.showinfo("Info", "Open an EA graphics file first to see its validation report.")
+            return
+
+        report = getattr(ea_image, "validation_report", None)
+        if report is None:
+            try:
+                report = validate_ea_image(ea_image)
+                ea_image.validation_report = report
+            except Exception as error:
+                logger.error(f"Can't build validation report! Error: {error}")
+                messagebox.showwarning("Warning", "Could not build the validation report for this file.")
+                return
+
+        ValidationReportWindow(self, ea_image)
 
     @staticmethod
     def set_text_in_box(in_box, in_text):

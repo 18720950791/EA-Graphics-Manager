@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c \"import reversebox, PIL, numpy, center_tk_window; print\\(''deps ok''\\)\")",
+      "Bash(python -m pytest src/tests/test_container_validation.py -q)",
+      "Bash(python -c \"import src.EA_Image.container_validation, src.GUI.validation_report_window, src.GUI.GUI_main, src.GUI.GUI_menu; print\\(''''import smoke ok''''\\)\")",
+      "Bash(python -m flake8 src/EA_Image/container_validation.py src/GUI/validation_report_window.py src/EA_Image/ea_image_main.py src/GUI/GUI_main.py src/GUI/GUI_menu.py src/tests/test_container_validation.py)",
+      "Bash(python -m black --check src/EA_Image/container_validation.py src/GUI/validation_report_window.py src/EA_Image/ea_image_main.py src/GUI/GUI_main.py src/GUI/GUI_menu.py src/tests/test_container_validation.py)",
+      "Bash(python -m isort --profile black --check-only src/EA_Image/container_validation.py src/GUI/validation_report_window.py src/EA_Image/ea_image_main.py src/GUI/GUI_main.py src/GUI/GUI_menu.py src/tests/test_container_validation.py)",
+      "Bash(python -m py_compile src/EA_Image/container_validation.py src/GUI/validation_report_window.py src/EA_Image/ea_image_main.py src/GUI/GUI_main.py src/GUI/GUI_menu.py src/tests/test_container_validation.py)",
+      "Bash(python -m pytest src/tests -q)"
+    ]
+  }
+}
